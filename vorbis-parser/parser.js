@@ -1,5 +1,15 @@
-var getLong = new Function("x0, x1, x2, x3, x4, x5, x6, x7", "return ((x7 << 56) + (x6 << 48) + (x5 << 40) + (x4 << 32) + (x3 << 24) + (x2 << 16) + (x1 << 8) + x0)");
-var getInt = new Function("x0, x1, x2, x3", "return ((x3 << 24) + (x2 << 16) + (x1 << 8) + x0)");
+var getInt = function(x0, x1, x2, x3) {
+    return ((x3 << 24) + (x2 << 16) + (x1 << 8) + x0);
+}
+var getLong = function(x0, x1, x2, x3, x4, x5, x6, x7) {
+    return ((x7 << 56) + (x6 << 48) + (x5 << 40) + (x4 << 32) + (x3 << 24) + (x2 << 16) + (x1 << 8) + x0)
+}
+var getLongFromBuffer = function(dataBuffer) {
+    return getLong(dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext());
+};
+var getIntFromBuffer = function(dataBuffer) {
+    return getInt(dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext());
+};
 var log = function(data) {
     console.log(data);
 };
@@ -14,11 +24,6 @@ var getIntFrom = function(data, start) {
 var getString = function(data, offset, len) {
     return data.toString('utf-8', offset, offset + len)
 };
-var getNext = function(dataBuffer) {
-    var result = dataBuffer.buffer[dataBuffer.position]
-    dataBuffer.position++;
-    return result;
-};
 var getDataSize = function(buffer) {
     var result = 0;
     for (var i = 0; i < buffer.length; i++) {
@@ -29,22 +34,22 @@ var getDataSize = function(buffer) {
 var readAllBytes = function(dataBuffer, length) {
     var result = new Buffer(length);
     for (var i = 0; i < length; i++) {
-        result[i] = dataBuffer.buffer[dataBuffer.position++];
+        result[i] = dataBuffer.getNext();
     }
     return result;
 };
 var readPage = function(dataBuffer) {
     for (var i = 0; i < 4; i++) {
-        getNext(dataBuffer); // skip "OggS"
+        dataBuffer.getNext(); // skip "OggS"
     }
     var page = new Page();
-    page.version = getNext(dataBuffer);
-    page.flags = getNext(dataBuffer);
-    page.granulePosition = getLong(getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer));
-    page.sid = getInt(getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer));
-    page.sequenceNum = getInt(getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer));
-    page.checkSum = getInt(getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer), getNext(dataBuffer));
-    page.segmentsNumber = getNext(dataBuffer);
+    page.version = dataBuffer.getNext();
+    page.flags = dataBuffer.getNext();
+    page.granulePosition = getLongFromBuffer(dataBuffer);
+    page.sid = getIntFromBuffer(dataBuffer);
+    page.sequenceNum = getIntFromBuffer(dataBuffer);
+    page.checkSum = getIntFromBuffer(dataBuffer);
+    page.segmentsNumber = dataBuffer.getNext();
     page.segments = readAllBytes(dataBuffer, page.segmentsNumber);
     page.dataSize = getDataSize(page.segments);
     page.data = readAllBytes(dataBuffer, page.dataSize);
@@ -54,6 +59,9 @@ var readPage = function(dataBuffer) {
 function Data(buffer, position) {
     this.buffer = buffer;
     this.position = position;
+    this.getNext = function() {
+        return this.buffer[this.position++];
+    }
 };
 
 function PacketReader(dataBuffer) {
