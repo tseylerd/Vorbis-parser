@@ -1,14 +1,52 @@
+/**
+ * Vorbis parser parse ogg-vorbis audio file.
+ * First, it reads first three packages which contains some meta-information. Info package contains information about chanels,
+ * bitrate, rate, version and block size. Next, comments package may contains information about artist, name of the track
+ * and other comments. Setup package contains number of codeblocks. Then parser reads all audio packages.
+ * You can use this parser in your code like "var parser = new Parser(file); parser.parse();"
+ * Parse function returns VorbisFile.
+ */
+
+/**
+ * Returns integer from 4 Numbers in reverse order
+ * @param {Number} x0
+ * @param {Number} x1
+ * @param {Number} x2
+ * @param {Number} x3
+ * @returns {int}
+ */
 var getInt = function(x0, x1, x2, x3) {
     return ((x3 << 24) + (x2 << 16) + (x1 << 8) + x0);
 }
+
+/**
+ * Returns Number from 8 Numbers in reverse order
+ * @param {Number} x0
+ * @param {Number} x1
+ * @param {Number} x2
+ * @param {Number} x3
+ * @param {Number} x4
+ * @param {Number} x5
+ * @param {Number} x6
+ * @param {Number} x7
+ * @returns {Number}
+ */
 var getLong = function(x0, x1, x2, x3, x4, x5, x6, x7) {
     return ((x7 << 56) + (x6 << 48) + (x5 << 40) + (x4 << 32) + (x3 << 24) + (x2 << 16) + (x1 << 8) + x0)
 }
-var getLongFromBuffer = function(dataBuffer) {
-    return getLong(dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext());
+
+var getLongFromBuffer = function(dataIterator) {
+    return getLong(dataIterator.getNext(), dataIterator.getNext(), dataIterator.getNext(), dataIterator.getNext(),
+        dataIterator.getNext(), dataIterator.getNext(), dataIterator.getNext(), dataIterator.getNext());
 };
-var getIntFromBuffer = function(dataBuffer) {
-    return getInt(dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext(), dataBuffer.getNext());
+
+/**
+ * Returns int from buffer
+ * @param {DataIterator} dataIterator
+ * @returns {int}
+ */
+var getIntFromBuffer = function(dataIterator) {
+    return getInt(dataIterator.getNext(), dataIterator.getNext(), dataIterator.getNext(), dataIterator.getNext());
 };
 var log = function(data) {
     console.log(data);
@@ -18,12 +56,32 @@ var logArray = function(data, i) {
         log(data[i]);
     }
 };
+
+/**
+ * Returns int from given buffer
+ * @param {Buffer} data
+ * @param {Number} start
+ * @returns {Number}
+ */
 var getIntFrom = function(data, start) {
     return getInt(data[start++], data[start++], data[start++], data[start++]);
 };
+/**
+ * Returns string from given buffer
+ * @param {Buffer} data
+ * @param {Number} offset
+ * @param {Number} len
+ * @returns {String}
+ */
 var getString = function(data, offset, len) {
     return data.toString('utf-8', offset, offset + len)
 };
+
+/**
+ * Returns data size
+ * @param {Buffer} buffer
+ * @returns {Number}
+ */
 var getDataSize = function(buffer) {
     var result = 0;
     for (var i = 0; i < buffer.length; i++) {
@@ -31,55 +89,81 @@ var getDataSize = function(buffer) {
     }
     return result;
 };
-var readAllBytes = function(dataBuffer, length) {
+
+/**
+ * Reads fixed count of Numbers from DataIterator
+ * @param {DataIterator} dataIterator
+ * @param {Number} length
+ * @returns {Buffer}
+ */
+var readAllBytes = function(dataIterator, length) {
     var result = new Buffer(length);
     for (var i = 0; i < length; i++) {
-        result[i] = dataBuffer.getNext();
+        result[i] = dataIterator.getNext();
     }
     return result;
 };
-var readPage = function(dataBuffer) {
+
+/**
+ * Reads next page from file
+ * @param {DataIterator} dataIterator
+ * @returns {Page}
+ */
+var readPage = function(dataIterator) {
     for (var i = 0; i < 4; i++) {
-        dataBuffer.getNext(); // skip "OggS"
+        dataIterator.getNext(); // skip "OggS"
     }
     var page = new Page();
-    page.version = dataBuffer.getNext();
-    page.flags = dataBuffer.getNext();
-    page.granulePosition = getLongFromBuffer(dataBuffer);
-    page.sid = getIntFromBuffer(dataBuffer);
-    page.sequenceNum = getIntFromBuffer(dataBuffer);
-    page.checkSum = getIntFromBuffer(dataBuffer);
-    page.segmentsNumber = dataBuffer.getNext();
-    page.segments = readAllBytes(dataBuffer, page.segmentsNumber);
+    page.version = dataIterator.getNext();
+    page.flags = dataIterator.getNext();
+    page.granulePosition = getLongFromBuffer(dataIterator);
+    page.sid = getIntFromBuffer(dataIterator);
+    page.sequenceNum = getIntFromBuffer(dataIterator);
+    page.checkSum = getIntFromBuffer(dataIterator);
+    page.segmentsNumber = dataIterator.getNext();
+    page.segments = readAllBytes(dataIterator, page.segmentsNumber);
     page.dataSize = getDataSize(page.segments);
-    page.data = readAllBytes(dataBuffer, page.dataSize);
+    page.data = readAllBytes(dataIterator, page.dataSize);
     return page;
 };
 
-function Data(buffer, position) {
-    this.buffer = buffer;
-    this.position = position;
+/**
+ * @param {Buffer} buffer
+ * @param {Number} position
+ * @constructor
+ */
+function DataIterator(buffer, position) {
+    this._buffer = buffer;
+    this._position = position;
     this.getNext = function() {
-        return this.buffer[this.position++];
+        return this._buffer[this._position++];
+    };
+    this.hasNext = function() {
+        return this._buffer[this._position+1] != undefined;
     }
 };
 
-function PacketReader(dataBuffer) {
-    this.dataBuffer = dataBuffer;
-    this.page = readPage(this.dataBuffer);
+/**
+ * Help to reads packets from file
+ * @param {DataIterator} dataIterator
+ * @constructor
+ */
+function PacketReader(dataIterator) {
+    this._dataIterator = dataIterator;
+    this._page = readPage(this._dataIterator);
     this.hasNextPacket = function () {
-        return (this.page.hasNextPacket() || this.dataBuffer.buffer[this.dataBuffer.position+1] != undefined);
-    }
+        return (this._page.hasNextPacket() || this._dataIterator.hasNext());
+    };
     this.getNextPacket = function () {
-        if (!this.page.hasNextPacket()) {
-            this.page = readPage(this.dataBuffer);
+        if (!this._page.hasNextPacket()) {
+            this._page = readPage(this._dataIterator);
         }
-        var packet = this.page.getNextPacket();
-        packet.parent = this.page;
+        var packet = this._page.getNextPacket();
+        packet.parent = this._page;
         var data = packet.data;
         while (packet.continueOnNextPage) {
-            this.page = readPage(this.dataBuffer);
-            var newPacket = this.page.getNextPacket();
+            this._page = readPage(this._dataIterator);
+            var newPacket = this._page.getNextPacket();
             var newData = new Buffer(data.length + newPacket.data.length);
             data.copy(newData, 0, 0, data.length);
             newPacket.data.copy(newData, data.length, 0, newPacket.data.length);
@@ -90,6 +174,11 @@ function PacketReader(dataBuffer) {
         return packet;
     }
 }
+
+/**
+ * Vorbis file page
+ * @constructor
+ */
 function Page() {
     this.currentOffset = 0;
     this.currentSegment = 0;
@@ -135,23 +224,28 @@ function Page() {
         return packet;
     }
 }
+
+/**
+ * Vorbis file
+ * @constructor
+ */
 var VorbisFile = function() {
     this.lastGranulePosition = -1;
     this.audioPackets = [];
     this.i = 0;
-    this.handleAudioPacket = function(audioData) {
+    this.addAudioPacket = function(audioData) {
         this.audioSize += audioData.data.length;
         if (audioData.parent.granulePosition > this.lastGranulePosition)
             this.lastGranulePosition = audioData.parent.granulePosition;
         this.audioPackets[this.i++] = audioData;
     };
-    this.handleInfoPacket = function(infoData) {
+    this.setInfoPacket = function(infoData) {
         this.infoPacket = infoData;
     };
-    this.handleCommentsPacket = function(commentsData) {
+    this.setCommentsPacket = function(commentsData) {
         this.commentsPacket = commentsData;
     };
-    this.handleSetupPacket = function(setupData) {
+    this.setSetupPacket = function(setupData) {
         this.setupPacket = setupData;
     };
     this.getDuration = function() {
@@ -164,15 +258,21 @@ var VorbisFile = function() {
         return (this.infoPacket.bitrate);
     };
 };
+
+/**
+ * Creates new parser.
+ * @param {String} file
+ * @constructor
+ */
 var Parser = function (file) {
     var fs = require('fs');
     var buffer = fs.readFileSync(file);
-    this.dataBuffer = new Data(buffer, 0);
-    this.packetReader = new PacketReader(this.dataBuffer);
-    this.vorbisFile = new VorbisFile();
+    /** @private */ this._dataIterator = new DataIterator(buffer, 0);
+    /** @private */ this._packetReader = new PacketReader(this._dataIterator);
+    /** @private */ this._vorbisFile = new VorbisFile();
     this.parse = function() {
         //info
-        var infoPacket = this.packetReader.getNextPacket();
+        var infoPacket = this._packetReader.getNextPacket();
         infoPacket.type = "Info";
         infoPacket.version = getIntFrom(infoPacket.data, 7);
         infoPacket.chanels = infoPacket.data[11];
@@ -181,9 +281,9 @@ var Parser = function (file) {
         infoPacket.bitrate = getIntFrom(infoPacket.data, 20);
         infoPacket.bitrateLower = getIntFrom(infoPacket.data, 24);
         infoPacket.blockSize = infoPacket.data[28];
-        this.vorbisFile.handleInfoPacket(infoPacket);
+        this._vorbisFile.setInfoPacket(infoPacket);
         //Comments packet
-        var commentsPacket = this.packetReader.getNextPacket();
+        var commentsPacket = this._packetReader.getNextPacket();
         var dataBegins = 7;
         var len = getIntFrom(commentsPacket.data, dataBegins);
         commentsPacket.vendor = getString(commentsPacket.data, dataBegins + 4, len);
@@ -203,28 +303,29 @@ var Parser = function (file) {
                 commentsPacket.comments[currentComment++] = comment;
             }
         }
-        this.vorbisFile.handleCommentsPacket(commentsPacket);
+        this._vorbisFile.setCommentsPacket(commentsPacket);
         //setup packet
-        var setupPacket = this.packetReader.getNextPacket();
+        var setupPacket = this._packetReader.getNextPacket();
         setupPacket.numberOfCodeblocks = setupPacket.data[8];
-        this.vorbisFile.handleSetupPacket(setupPacket);
+        this._vorbisFile.setSetupPacket(setupPacket);
         //audio
-        while (this.packetReader.hasNextPacket()) {
-            audioData = this.packetReader.getNextPacket();
-            this.vorbisFile.handleAudioPacket(audioData);
+        while (this._packetReader.hasNextPacket()) {
+            audioData = this._packetReader.getNextPacket();
+            this._vorbisFile.addAudioPacket(audioData);
         }
-        return this.vorbisFile;
+        return this._vorbisFile;
     };
 };
+
+module.exports = Parser;
 /**
  * reading file
- **/
+ */
 var file = process.argv[2]
 var parser = new Parser(file);
 var vorbisFile = parser.parse();
 log(vorbisFile.getDuration());
 logArray(vorbisFile.getComments());
 log(vorbisFile.getBitrate());
-
 
 
