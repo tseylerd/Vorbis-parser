@@ -257,6 +257,35 @@ var VorbisFile = function() {
     this.getBitrate = function() {
         return (this.infoPacket.bitrate);
     };
+    this.getCodecPrivateForMatriska = function() {
+        var length = this.commentsPacket.data.length + this.infoPacket.data.length + this.setupPacket.data.length + 3;
+        var buffer = new Buffer(length);
+        var position = 0;
+        buffer[position++] = 2;
+        buffer[position++] = this.infoPacket.data.length;
+        buffer[position++] = this.commentsPacket.data.length;
+        for (var i = 0; i < this.infoPacket.data.length; i++) {
+            buffer[position++] = this.infoPacket.data[i];
+        }
+        for (var i = 0; i < this.commentsPacket.data.length; i++) {
+            buffer[position++] = this.commentsPacket.data[i];
+        }
+        for (var i = 0; i < this.setupPacket.data.length; i++) {
+            buffer[position++] = this.setupPacket.data[i];
+        }
+        return buffer.toString('binary');
+    }
+    this.getWebMSpecificAudioPackets = function() {
+        var packets = this.audioPackets;
+        var result = [];
+        for (var i = 0; i < packets.length; i++) {
+            result.push({
+                data : packets[i].data.toString('binary'),
+                start : packets[i].parent.granulePosition/this.infoPacket.rate * 1000
+            })
+        }
+        return result;
+    }
 };
 
 /**
@@ -321,11 +350,12 @@ module.exports = Parser;
 /**
  * reading file
  */
+    /*
 var file = process.argv[2]
 var parser = new Parser(file);
 var vorbisFile = parser.parse();
 log(vorbisFile.getDuration());
 logArray(vorbisFile.getComments());
 log(vorbisFile.getBitrate());
-
+*/
 
