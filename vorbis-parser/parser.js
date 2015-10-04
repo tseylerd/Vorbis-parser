@@ -257,7 +257,7 @@ var VorbisFile = function() {
     this.getBitrate = function() {
         return (this.infoPacket.bitrate);
     };
-    this.getCodecPrivateForMatriska = function() {
+    this.getCodecPrivateForMatroska = function() {
         var length = this.commentsPacket.data.length + this.infoPacket.data.length + this.setupPacket.data.length + 3;
         var buffer = new Buffer(length);
         var position = 0;
@@ -281,7 +281,7 @@ var VorbisFile = function() {
         for (var i = 0; i < packets.length; i++) {
             result.push({
                 data : packets[i].data.toString('binary'),
-                start : packets[i].parent.granulePosition/this.infoPacket.rate * 1000
+                timecode : packets[i].parent.granulePosition/this.infoPacket.rate * 1000
             })
         }
         return result;
